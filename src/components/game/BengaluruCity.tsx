@@ -525,11 +525,11 @@ const InfiniteRoadChunk: React.FC<{
           <meshBasicMaterial color="#eab308" />
         </mesh>
 
-        {/* Flowering Bougainvillea Median Shrubs */}
-        {Array.from({ length: 28 }).map((_, i) => (
-          <group key={`bush-${i}`} position={[0, 0.42, -140 + i * 10.5]}>
-            <mesh castShadow>
-              <sphereGeometry args={[0.72, 8, 8]} />
+        {/* Flowering Bougainvillea Median Shrubs (Optimized Draw Calls) */}
+        {Array.from({ length: 14 }).map((_, i) => (
+          <group key={`bush-${i}`} position={[0, 0.42, -135 + i * 21]}>
+            <mesh>
+              <sphereGeometry args={[0.75, 6, 6]} />
               <meshStandardMaterial
                 color={i % 3 === 0 ? '#ec4899' : i % 3 === 1 ? '#e11d48' : '#15803d'}
                 roughness={0.85}
@@ -539,28 +539,28 @@ const InfiniteRoadChunk: React.FC<{
         ))}
       </group>
 
-      {/* White Dashed Lane Dividers & Retroreflective Cat's Eyes */}
-      {Array.from({ length: 26 }).map((_, i) => (
+      {/* White Dashed Lane Dividers & Retroreflective Cat's Eyes (Optimized Draw Calls) */}
+      {Array.from({ length: 14 }).map((_, i) => (
         <group key={`lane-${i}`}>
-          <mesh position={[-5, 0.02, -135 + i * 11]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[0.22, 5]} />
+          <mesh position={[-5, 0.02, -135 + i * 21]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.22, 6]} />
             <meshBasicMaterial color="#ffffff" />
           </mesh>
-          <mesh position={[-10, 0.02, -135 + i * 11]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[0.22, 5]} />
+          <mesh position={[-10, 0.02, -135 + i * 21]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.22, 6]} />
             <meshBasicMaterial color="#ffffff" />
           </mesh>
-          <mesh position={[5, 0.02, -135 + i * 11]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[0.22, 5]} />
+          <mesh position={[5, 0.02, -135 + i * 21]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.22, 6]} />
             <meshBasicMaterial color="#ffffff" />
           </mesh>
-          <mesh position={[10, 0.02, -135 + i * 11]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[0.22, 5]} />
+          <mesh position={[10, 0.02, -135 + i * 21]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.22, 6]} />
             <meshBasicMaterial color="#ffffff" />
           </mesh>
 
           {/* Cat's Eye Road Studs */}
-          <mesh position={[-5, 0.035, -135 + i * 11 + 3]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh position={[-5, 0.035, -135 + i * 21 + 4]} rotation={[-Math.PI / 2, 0, 0]}>
             <boxGeometry args={[0.12, 0.08, 0.03]} />
             <meshStandardMaterial
               color="#fef08a"
@@ -568,7 +568,7 @@ const InfiniteRoadChunk: React.FC<{
               emissiveIntensity={lightPolesOn ? 2.2 : 0.4}
             />
           </mesh>
-          <mesh position={[-10, 0.035, -135 + i * 11 + 3]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh position={[5, 0.035, -135 + i * 21 + 4]} rotation={[-Math.PI / 2, 0, 0]}>
             <boxGeometry args={[0.12, 0.08, 0.03]} />
             <meshStandardMaterial
               color="#fef08a"
@@ -596,16 +596,16 @@ const InfiniteRoadChunk: React.FC<{
         </mesh>
       </group>
 
-      {/* 4. Optimized Streetlight Poles with Emissive Bulbs (Zero-Lag 60fps) */}
-      {[-120, -60, 0, 60, 120].map((zPos, idx) => (
+      {/* 4. Optimized Streetlight Poles with Emissive Bulbs */}
+      {[-100, 0, 100].map((zPos, idx) => (
         <group key={`light-${idx}`}>
           <group position={[-16.5, 0, zPos]}>
-            <mesh position={[0, 4, 0]} castShadow>
-              <cylinderGeometry args={[0.12, 0.16, 8, 8]} />
+            <mesh position={[0, 4, 0]}>
+              <cylinderGeometry args={[0.12, 0.16, 8, 6]} />
               <meshStandardMaterial color="#64748b" metalness={0.8} />
             </mesh>
             <mesh position={[1.2, 7.8, 0]} rotation={[0, 0, -Math.PI / 4]}>
-              <cylinderGeometry args={[0.08, 0.08, 3.2, 8]} />
+              <cylinderGeometry args={[0.08, 0.08, 3.2, 6]} />
               <meshStandardMaterial color="#64748b" metalness={0.8} />
             </mesh>
             <mesh position={[2.3, 8.8, 0]}>
@@ -613,18 +613,18 @@ const InfiniteRoadChunk: React.FC<{
               <meshStandardMaterial color="#334155" />
             </mesh>
             <mesh position={[2.3, 8.65, 0]} rotation={[Math.PI / 2, 0, 0]}>
-              <circleGeometry args={[0.28, 12]} />
+              <circleGeometry args={[0.28, 8]} />
               <meshBasicMaterial color={lightPolesOn ? '#fef08a' : '#475569'} />
             </mesh>
           </group>
 
           <group position={[16.5, 0, zPos]}>
-            <mesh position={[0, 4, 0]} castShadow>
-              <cylinderGeometry args={[0.12, 0.16, 8, 8]} />
+            <mesh position={[0, 4, 0]}>
+              <cylinderGeometry args={[0.12, 0.16, 8, 6]} />
               <meshStandardMaterial color="#64748b" metalness={0.8} />
             </mesh>
             <mesh position={[-1.2, 7.8, 0]} rotation={[0, 0, Math.PI / 4]}>
-              <cylinderGeometry args={[0.08, 0.08, 3.2, 8]} />
+              <cylinderGeometry args={[0.08, 0.08, 3.2, 6]} />
               <meshStandardMaterial color="#64748b" metalness={0.8} />
             </mesh>
             <mesh position={[-2.3, 8.8, 0]}>
@@ -632,7 +632,7 @@ const InfiniteRoadChunk: React.FC<{
               <meshStandardMaterial color="#334155" />
             </mesh>
             <mesh position={[-2.3, 8.65, 0]} rotation={[Math.PI / 2, 0, 0]}>
-              <circleGeometry args={[0.28, 12]} />
+              <circleGeometry args={[0.28, 8]} />
               <meshBasicMaterial color={lightPolesOn ? '#fef08a' : '#475569'} />
             </mesh>
           </group>
@@ -747,7 +747,7 @@ interface BengaluruCityProps {
   playerZ?: number;
 }
 
-export const BengaluruCity: React.FC<BengaluruCityProps> = ({
+export const BengaluruCity: React.FC<BengaluruCityProps> = React.memo(({
   timeOfDay = 'sunset',
   playerZ = 0,
 }) => {
@@ -881,8 +881,8 @@ export const BengaluruCity: React.FC<BengaluruCityProps> = ({
         color={envConfig.sunColor}
         intensity={envConfig.sunIntensity}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-near={10}
         shadow-camera-far={480}
         shadow-camera-left={-200}
@@ -914,4 +914,4 @@ export const BengaluruCity: React.FC<BengaluruCityProps> = ({
       ))}
     </group>
   );
-};
+});

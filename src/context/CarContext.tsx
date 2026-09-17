@@ -41,24 +41,59 @@ interface CarContextType {
   // Active Hotspot Object
   activeHotspot: Hotspot | null;
 }
-
 const CarContext = createContext<CarContextType | undefined>(undefined);
+const STORAGE_KEY = 'carverse_user_config_v1';
 
 export const CarProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [selectedCar, setSelectedCarState] = useState<Vehicle>(CARS_DATA[0]);
-  const [selectedCategory, setSelectedCategoryState] = useState<VehicleCategory>('SPORTS');
+  // Load saved config from localStorage if available
+  const savedConfig = React.useMemo(() => {
+    try {
+      const item = localStorage.getItem(STORAGE_KEY);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  }, []);
+
+  const initialCar = React.useMemo(() => {
+    if (savedConfig?.carId) {
+      const found = CARS_DATA.find((c) => c.id === savedConfig.carId);
+      if (found) return found;
+    }
+    return CARS_DATA[0];
+  }, [savedConfig]);
+
+  const [selectedCar, setSelectedCarState] = useState<Vehicle>(initialCar);
+  const [selectedCategory, setSelectedCategoryState] = useState<VehicleCategory>(initialCar.category);
 
   // Customization State
   const [customization, setCustomization] = useState<CustomizationState>({
-    selectedColorId: CARS_DATA[0].colors[0].id,
-    selectedWheelId: CARS_DATA[0].wheels[0].id,
-    selectedCaliperId: CALIPER_OPTIONS[1].id, // Racing red default
-    headlightsOn: true,
-    environment: 'day',
+    selectedColorId: savedConfig?.colorId || initialCar.colors[0].id,
+    selectedWheelId: savedConfig?.wheelId || initialCar.wheels[0].id,
+    selectedCaliperId: savedConfig?.caliperId || CALIPER_OPTIONS[1].id,
+    headlightsOn: savedConfig?.headlightsOn ?? true,
+    environment: savedConfig?.environment || 'day',
     cameraPreset: 'three-quarter',
     activeHotspotId: null,
     isDriving: false,
   });
+
+  // Save to localStorage whenever user configuration changes
+  useEffect(() => {
+    try {
+      const configToSave = {
+        carId: selectedCar.id,
+        colorId: customization.selectedColorId,
+        wheelId: customization.selectedWheelId,
+        caliperId: customization.selectedCaliperId,
+        headlightsOn: customization.headlightsOn,
+        environment: customization.environment,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(configToSave));
+    } catch (e) {
+      console.warn('Failed to save carverse configuration to localStorage:', e);
+    }
+  }, [selectedCar.id, customization.selectedColorId, customization.selectedWheelId, customization.selectedCaliperId, customization.headlightsOn, customization.environment]);
 
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);

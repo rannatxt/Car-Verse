@@ -2,17 +2,17 @@ import React, { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
-export type CameraMode = 'chase' | 'close' | 'hood' | 'cockpit' | 'cinematic';
+export type CameraMode = 'chase' | 'close' | 'cockpit' | 'cinematic';
 
 export const CAMERA_MODES: { id: CameraMode; label: string; desc: string }[] = [
   { id: 'chase', label: 'Third-Person Chase', desc: 'Dynamic following camera with drift lag' },
   { id: 'close', label: 'Close Chase', desc: 'Low-slung aggressive rear view' },
-  { id: 'hood', label: 'Hood Camera', desc: 'Bonnet perspective rushing over asphalt' },
-  { id: 'cockpit', label: 'Cockpit Camera', desc: "Driver's cockpit POV behind the wheel" },
+  { id: 'cockpit', label: 'Cockpit Camera', desc: "Driver's cockpit POV with clear view of the road" },
   { id: 'cinematic', label: 'Cinematic Camera', desc: 'Wide dramatic dynamic driving view' },
 ];
 
 interface DrivingCameraProps {
+  carRef?: React.MutableRefObject<THREE.Group | null>;
   carPosition: THREE.Vector3;
   carHeading: number;
   carSpeedKmh: number;
@@ -20,6 +20,7 @@ interface DrivingCameraProps {
 }
 
 export const DrivingCamera: React.FC<DrivingCameraProps> = ({
+  carRef,
   carPosition,
   carHeading,
   carSpeedKmh,
@@ -29,6 +30,7 @@ export const DrivingCamera: React.FC<DrivingCameraProps> = ({
   const currentPos = useRef<THREE.Vector3>(new THREE.Vector3(0, 5, -15));
   const currentLookAt = useRef<THREE.Vector3>(new THREE.Vector3(0, 1, 0));
   const shakeTimer = useRef<number>(0);
+  const isInitialized = useRef<boolean>(false);
 
   // Pre-allocated reusable vectors for zero-garbage 60-120fps camera loop
   const localOffset = useRef(new THREE.Vector3());
@@ -39,48 +41,47 @@ export const DrivingCamera: React.FC<DrivingCameraProps> = ({
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.04);
 
-    // Forward and Right direction vectors from car heading
-    const sinH = Math.sin(carHeading);
-    const cosH = Math.cos(carHeading);
+    // Prefer direct live 60fps matrix position/heading from carRef to bypass React state throttling
+    const livePos = carRef?.current ? carRef.current.position : carPosition;
+    const liveHeading = carRef?.current ? carRef.current.rotation.y : carHeading;
 
-    let lerpSpeed = 8.5;
+    // Forward and Right direction vectors from car heading
+    const sinH = Math.sin(liveHeading);
+    const cosH = Math.cos(liveHeading);
+
+    let lerpSpeed = 12.0;
 
     switch (mode) {
       case 'close':
         // Close athletic rear chase
-        localOffset.current.set(0, 1.65, -4.6);
-        localLookAt.current.set(0, 1.1, 5.0);
-        lerpSpeed = 11.0;
-        break;
-
-      case 'hood':
-        // Bonnet camera
-        localOffset.current.set(0, 1.05, 1.45);
-        localLookAt.current.set(0, 0.95, 20.0);
-        lerpSpeed = 22.0;
+        localOffset.current.set(0, 1.45, -4.2);
+        localLookAt.current.set(0, 0.75, 1.0);
+        lerpSpeed = 16.0;
         break;
 
       case 'cockpit':
-        // Driver's Cockpit POV (Eye level, seated inside Ferrari steering wheel)
-        localOffset.current.set(0.35, 1.18, 0.28);
-        localLookAt.current.set(0.35, 1.10, 22.0);
-        lerpSpeed = 16.0;
+        // Driver's Cockpit POV — eye level inside the cabin looking through the windshield
+        // X=0.22 (driver-side offset), Y=1.08 (eye height above car base), Z=0.75 (forward in cabin)
+        // LookAt Y=1.0 keeps gaze level with road horizon far ahead
+        localOffset.current.set(0.22, 1.08, 0.75);
+        localLookAt.current.set(0.22, 1.0, 80.0);
+        lerpSpeed = 100.0;
         break;
 
       case 'cinematic':
         // Wide dramatic dynamic angle
-        localOffset.current.set(4.5, 2.2, -6.8);
-        localLookAt.current.set(0, 1.0, 2.5);
-        lerpSpeed = 5.0;
+        localOffset.current.set(3.6, 1.5, -5.2);
+        localLookAt.current.set(0, 0.75, 0.8);
+        lerpSpeed = 10.0;
         break;
 
       case 'chase':
       default:
         // Third-Person Chase (default with dynamic distance lag)
-        const speedBackPush = Math.min(2.2, (carSpeedKmh / 260) * 2.2);
-        localOffset.current.set(0, 2.35 + speedBackPush * 0.12, -6.5 - speedBackPush);
-        localLookAt.current.set(0, 1.15, 5.5);
-        lerpSpeed = 9.0;
+        const speedBackPush = Math.min(2.0, (carSpeedKmh / 260) * 1.8);
+        localOffset.current.set(0, 1.85 + speedBackPush * 0.1, -5.8 - speedBackPush);
+        localLookAt.current.set(0, 0.75, 1.0);
+        lerpSpeed = 12.0;
         break;
     }
 
@@ -92,19 +93,26 @@ export const DrivingCamera: React.FC<DrivingCameraProps> = ({
     const lookOffZ = -localLookAt.current.x * sinH + localLookAt.current.z * cosH;
 
     targetCameraPos.current.set(
-      carPosition.x + worldOffX,
-      carPosition.y + localOffset.current.y,
-      carPosition.z + worldOffZ
+      livePos.x + worldOffX,
+      livePos.y + localOffset.current.y,
+      livePos.z + worldOffZ
     );
 
     targetLookAt.current.set(
-      carPosition.x + lookOffX,
-      carPosition.y + localLookAt.current.y,
-      carPosition.z + lookOffZ
+      livePos.x + lookOffX,
+      livePos.y + localLookAt.current.y,
+      livePos.z + lookOffZ
     );
 
-    // Subtle High-Speed Camera Shake (Speed > 90 km/h)
-    if (carSpeedKmh > 90) {
+    // Instantly sync camera on first frame to eliminate startup lag
+    if (!isInitialized.current) {
+      currentPos.current.copy(targetCameraPos.current);
+      currentLookAt.current.copy(targetLookAt.current);
+      isInitialized.current = true;
+    }
+
+    // Subtle High-Speed Camera Shake (Speed > 90 km/h) - Chase modes only
+    if (carSpeedKmh > 90 && mode !== 'cockpit') {
       shakeTimer.current += dt * 35;
       const shakeIntensity = Math.min(0.04, ((carSpeedKmh - 90) / 220) * 0.04);
       const shakeX = Math.sin(shakeTimer.current) * shakeIntensity;
@@ -113,12 +121,18 @@ export const DrivingCamera: React.FC<DrivingCameraProps> = ({
       targetCameraPos.current.y += shakeY;
     }
 
-    // Smooth exponential damping eliminates jitter across variable delta times
-    const posAlpha = 1.0 - Math.exp(-lerpSpeed * dt);
-    const lookAlpha = 1.0 - Math.exp(-(lerpSpeed + 2.5) * dt);
+    if (mode === 'cockpit') {
+      // Cockpit mode is 100% rigidly attached inside windshield with zero lag
+      currentPos.current.copy(targetCameraPos.current);
+      currentLookAt.current.copy(targetLookAt.current);
+    } else {
+      // Smooth exponential damping for chase & cinematic cameras
+      const posAlpha = 1.0 - Math.exp(-lerpSpeed * dt);
+      const lookAlpha = 1.0 - Math.exp(-(lerpSpeed + 2.5) * dt);
 
-    currentPos.current.lerp(targetCameraPos.current, posAlpha);
-    currentLookAt.current.lerp(targetLookAt.current, lookAlpha);
+      currentPos.current.lerp(targetCameraPos.current, posAlpha);
+      currentLookAt.current.lerp(targetLookAt.current, lookAlpha);
+    }
 
     camera.position.copy(currentPos.current);
     camera.lookAt(currentLookAt.current);

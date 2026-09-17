@@ -4,11 +4,13 @@ import { Navigation } from './components/ui/Navigation';
 import { SearchModal } from './components/ui/SearchModal';
 import { LoadingScreen } from './components/ui/LoadingScreen';
 import { Home } from './pages/Home';
-import { Studio } from './pages/Studio';
-import { Compare } from './pages/Compare';
-import { About } from './pages/About';
-import { BengaluruDrive } from './pages/BengaluruDrive';
 import { useCar } from './context/CarContext';
+
+// Lazy loaded routes for bundle optimization
+const Studio = React.lazy(() => import('./pages/Studio').then((m) => ({ default: m.Studio })));
+const Compare = React.lazy(() => import('./pages/Compare').then((m) => ({ default: m.Compare })));
+const About = React.lazy(() => import('./pages/About').then((m) => ({ default: m.About })));
+const BengaluruDrive = React.lazy(() => import('./pages/BengaluruDrive').then((m) => ({ default: m.BengaluruDrive })));
 
 // Param-aware route wrapper for /models/:id
 const ModelParamHandler: React.FC = () => {
@@ -41,16 +43,18 @@ export const App: React.FC = () => {
 
       {/* Application Routing */}
       <main className="flex-1">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/models" element={<Home />} />
-          <Route path="/models/:id" element={<ModelParamHandler />} />
-          <Route path="/studio" element={<Studio />} />
-          <Route path="/compare" element={<Compare />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/drive" element={<BengaluruDrive />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <React.Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/models" element={<Home />} />
+            <Route path="/models/:id" element={<ModelParamHandler />} />
+            <Route path="/studio" element={<Studio />} />
+            <Route path="/compare" element={<Compare />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/drive" element={<BengaluruDrive />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </React.Suspense>
       </main>
     </div>
   );

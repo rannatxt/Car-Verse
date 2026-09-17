@@ -60,10 +60,22 @@ class AudioEngine {
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioContextClass();
 
-      // Master Volume
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(0.75, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      // Auto-unlock AudioContext on first user interaction
+      const unlockAudio = () => {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch((err) => console.warn('AudioContext resume failed:', err));
+        }
+        window.removeEventListener('pointerdown', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+      };
+      window.addEventListener('pointerdown', unlockAudio, { passive: true });
+      window.addEventListener('keydown', unlockAudio, { passive: true });
+      window.addEventListener('touchstart', unlockAudio, { passive: true });
 
       // --- 1. Supercar V8 Combustion Synthesis ---
       this.engineGain = this.ctx.createGain();
@@ -173,6 +185,12 @@ class AudioEngine {
     slipRatio: number,
     gear: number | string
   ) {
+    if (!this.isInitialized) {
+      this.init();
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
     if (!this.isInitialized || !this.ctx || this.isMuted) return;
 
     const time = this.ctx.currentTime;

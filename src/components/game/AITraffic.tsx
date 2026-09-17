@@ -331,31 +331,43 @@ export const AITraffic: React.FC<AITrafficProps> = ({ playerPos }) => {
         color: '#94a3b8',
       },
 
-      // --- Flyover Traffic (Elevated Expressway at X = 52, Y = 9.5m) ---
-      // 8. Express Taxi on Flyover heading North
+      // 8. Red Sports Taxi on middle left lane heading North
       {
-        id: 'car-flyover-1',
+        id: 'car-3',
         type: 'car',
-        pos: new THREE.Vector3(48, 9.5, -90),
+        pos: new THREE.Vector3(-5, 0, -90),
         rotY: 0,
-        speed: 22,
-        targetSpeed: 22,
-        laneX: 48,
+        speed: 20,
+        targetSpeed: 20,
+        laneX: -5,
         direction: 1,
-        isFlyover: true,
+        isFlyover: false,
         color: '#dc2626',
       },
-      // 9. Auto on Flyover heading South
+      // 9. Auto-Rickshaw on outer right lane heading South
       {
-        id: 'auto-flyover-2',
+        id: 'auto-4',
         type: 'auto',
-        pos: new THREE.Vector3(56, 9.5, 90),
+        pos: new THREE.Vector3(10, 0, 90),
         rotY: Math.PI,
         speed: 14,
         targetSpeed: 14,
-        laneX: 56,
+        laneX: 10,
         direction: -1,
-        isFlyover: true,
+        isFlyover: false,
+      },
+      // 10. Blue SUV on inner right lane heading South
+      {
+        id: 'car-4',
+        type: 'car',
+        pos: new THREE.Vector3(5, 0, -180),
+        rotY: Math.PI,
+        speed: 18,
+        targetSpeed: 18,
+        laneX: 5,
+        direction: -1,
+        isFlyover: false,
+        color: '#0284c7',
       },
     ];
   }, []);
