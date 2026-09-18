@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { useGLTF, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { audioEngine } from './AudioEngine';
 
@@ -20,6 +20,11 @@ export interface CarTelemetry {
   rightTirePos: THREE.Vector3;
   boostBar?: number;
   lateralG?: number;
+  distanceMeters: number;
+  carHp: number;
+  isSlowedDown: boolean;
+  slowdownRemainingSec: number;
+  isGameOver: boolean;
 }
 
 export interface InputState {
@@ -64,7 +69,7 @@ export const HumanDriver: React.FC<{
   const accelInertia = THREE.MathUtils.clamp((speedKmh / 260) * 0.08, -0.06, 0.08);
 
   return (
-    <group position={[0.35, 0.48, 0.15]} rotation={[accelInertia, 0, 0]}>
+    <group position={[0.22, 0.28, 0.05]} scale={0.58} rotation={[accelInertia, 0, 0]}>
       {/* Racing Bucket Seat */}
       <group position={[0, 0.0, -0.15]}>
         <mesh position={[0, 0.45, -0.12]} rotation={[-0.22, 0, 0]} castShadow>
@@ -190,6 +195,9 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
   const wheelRR = useRef<THREE.Object3D | null>(null);
   const steeringWheel = useRef<THREE.Object3D | null>(null);
   const brakeLightsMat = useRef<THREE.MeshStandardMaterial | null>(null);
+  const modelOffset = useRef<THREE.Vector3>(new THREE.Vector3());
+  const modelScale = useRef<number>(1.0);
+  const modelHeight = useRef<number>(1.2); // car body height for driver Y placement
 
   // --- Physics Variables ---
   const pos = useRef<THREE.Vector3>(new THREE.Vector3(...initialPosition));
@@ -211,6 +219,11 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
   const hornWasPressed = useRef<boolean>(false);
   const bumpCooldown = useRef<number>(0);
   const telemetryThrottle = useRef<number>(0);
+  const distanceDriven = useRef<number>(0);
+  const carHp = useRef<number>(100);
+  const damageCooldown = useRef<number>(0);
+  const slowdownTimer = useRef<number>(0);
+  const invulnerableTimer = useRef<number>(0);
 
   // Keyboard Inputs
   const keys = useRef<InputState>({
@@ -225,9 +238,35 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
     toggleLights: false,
   });
 
-  // Deep clone Ferrari model and extract nodes
-  const clonedScene = useMemo(() => {
-    return scene.clone(true);
+  // Deep clone Ferrari model, normalize rotation+scale, and compute centering offset — all synchronously
+  const { clonedScene, sceneOffset, sceneHeight } = useMemo(() => {
+    const cloned = scene.clone(true);
+
+    // Apply 180° Y rotation so car front faces +Z (forward, away from chase camera)
+    cloned.position.set(0, 0, 0);
+    cloned.rotation.set(0, Math.PI, 0);
+    cloned.scale.set(1, 1, 1);
+    cloned.updateMatrixWorld(true);
+
+    // Scale car to ~4.7m length
+    const box1 = new THREE.Box3().setFromObject(cloned);
+    const size1 = box1.getSize(new THREE.Vector3());
+    const len = Math.max(size1.x, size1.z);
+    const s = 4.7 / (len || 1);
+    cloned.scale.set(s, s, s);
+    cloned.updateMatrixWorld(true);
+
+    // Compute final bounds to get the centering offset
+    const box2 = new THREE.Box3().setFromObject(cloned);
+    const center = box2.getCenter(new THREE.Vector3());
+    const min2 = box2.min;
+    const size2 = box2.getSize(new THREE.Vector3());
+
+    // The offset to apply on the JSX wrapper group so model bottom sits at Y=0 and is centered in X/Z
+    const offset = new THREE.Vector3(-center.x, -min2.y, -center.z);
+    // cloned.position stays (0,0,0) — JSX wrapper moves it
+
+    return { clonedScene: cloned, sceneOffset: offset, sceneHeight: size2.y };
   }, [scene]);
 
   useEffect(() => {
@@ -309,18 +348,35 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
       }
     });
 
-    // Normalize scale to length ~4.7 meters
-    const box = new THREE.Box3().setFromObject(clonedScene);
-    const size = box.getSize(new THREE.Vector3());
-    const length = Math.max(size.x, size.z);
-    const scale = 4.7 / length;
-    clonedScene.scale.set(scale, scale, scale);
-
-    box.setFromObject(clonedScene);
-    const center = box.getCenter(new THREE.Vector3());
-    const min = box.min;
-    clonedScene.position.set(-center.x, -min.y, -center.z);
+    // Wheel node extraction and material assignment only — scale/rotation/offset handled in useMemo
   }, [clonedScene]);
+
+  const applyDamage = (amount: number) => {
+    if (invulnerableTimer.current > 0 || carHp.current <= 0) return;
+
+    const oldHp = carHp.current;
+    let newHp = Math.max(0, oldHp - amount);
+
+    // Check if crossing 75%, 50%, or 25% thresholds
+    if (oldHp > 75 && newHp <= 75) {
+      newHp = 75;
+      invulnerableTimer.current = 3.5; // 3.5s damage shield
+      slowdownTimer.current = 3.0; // 3s engine slowdown
+      speed.current = Math.min(speed.current, 9.0);
+    } else if (oldHp > 50 && newHp <= 50) {
+      newHp = 50;
+      invulnerableTimer.current = 3.5;
+      slowdownTimer.current = 3.0;
+      speed.current = Math.min(speed.current, 9.0);
+    } else if (oldHp > 25 && newHp <= 25) {
+      newHp = 25;
+      invulnerableTimer.current = 3.5;
+      slowdownTimer.current = 3.0;
+      speed.current = Math.min(speed.current, 9.0);
+    }
+
+    carHp.current = newHp;
+  };
 
   // Keyboard Event Listeners
   useEffect(() => {
@@ -350,12 +406,17 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
           keys.current.handbrake = true;
           break;
         case 'KeyR':
-          // Reset car facing forward
-          pos.current.set(-7.5, 0, pos.current.z);
+          // Reset car facing forward, starting position, score & repair HP
+          pos.current.set(initialPosition[0], initialPosition[1], initialPosition[2]);
           speed.current = 0;
           lateralSlip.current = 0;
           heading.current = 0;
           velocity.current.set(0, 0, 0);
+          carHp.current = 100;
+          distanceDriven.current = 0;
+          driftScore.current = 0;
+          slowdownTimer.current = 0;
+          invulnerableTimer.current = 0;
           break;
         case 'KeyC':
           onCameraToggle?.();
@@ -404,7 +465,8 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
       velocity.current.x += recoilX;
       velocity.current.z += recoilZ;
       speed.current *= 0.55;
-      verticalVel.current = 1.6 * intensity;
+      verticalVel.current = 0.4 * intensity;
+      applyDamage(Math.round(15 * intensity));
       audioEngine.playCrash(intensity);
     };
 
@@ -442,44 +504,52 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
     }
 
     // --- 1. Speed-Sensitive Steering Dynamics ---
-    // Left input -> targetSteer > 0 -> heading turns left
-    // Right input -> targetSteer < 0 -> heading turns right
+    // High-speed steering lock tightens progressively at speed for real supercar stability
     const targetSteer = (inputLeft ? 1 : 0) - (inputRight ? 1 : 0);
-    const maxSteerAngle = 0.56 / (1 + Math.abs(speed.current) * 0.035);
+    const speedRatio = Math.min(1.0, Math.abs(speed.current) / 75.0);
+    const maxSteerAngle = THREE.MathUtils.lerp(0.32, 0.08, speedRatio);
+
     steerAngle.current = THREE.MathUtils.lerp(
       steerAngle.current,
       targetSteer * maxSteerAngle,
-      dt * 12
+      dt * 8.0
     );
 
     // --- 2. Smooth Supercar Acceleration, Braking & Reverse ---
-    const maxSpeedForward = 82; // ~295 km/h
+    if (slowdownTimer.current > 0) {
+      slowdownTimer.current = Math.max(0, slowdownTimer.current - dt);
+    }
+    if (invulnerableTimer.current > 0) {
+      invulnerableTimer.current = Math.max(0, invulnerableTimer.current - dt);
+    }
+
+    const maxSpeedForward = slowdownTimer.current > 0 ? 11.5 : 82; // ~41 km/h when engine stunned, ~295 km/h normal
     const maxSpeedReverse = -16; // ~58 km/h
-    const accelRate = 24.0;
-    const brakeRate = 38.0;
-    const coastFriction = 2.8;
+    const accelRate = 16.5; // Progressive V8 acceleration
+    const brakeRate = 34.0;
+    const coastFriction = 2.2;
 
     let throttle = 0;
     if (inputForward) {
       throttle = 1.0;
       if (speed.current < maxSpeedForward) {
-        const torqueFactor = Math.max(0.35, 1.0 - (speed.current / maxSpeedForward) * 0.55);
+        const torqueFactor = Math.max(0.4, 1.0 - (speed.current / maxSpeedForward) * 0.5);
         speed.current += accelRate * torqueFactor * dt;
+      } else if (slowdownTimer.current > 0) {
+        // Cap speed immediately during slowdown penalty
+        speed.current = THREE.MathUtils.lerp(speed.current, maxSpeedForward, dt * 6.0);
       }
     } else if (inputBackward) {
       if (speed.current > 0.4) {
-        // Braking while moving forward
         throttle = 0;
         speed.current = Math.max(0, speed.current - brakeRate * dt);
       } else {
-        // Smooth Reverse gear when stopped
         throttle = 0.65;
         if (speed.current > maxSpeedReverse) {
-          speed.current -= accelRate * 0.55 * dt;
+          speed.current -= accelRate * 0.5 * dt;
         }
       }
     } else {
-      // Coasting & aerodynamic drag
       if (Math.abs(speed.current) > 0.1) {
         const aeroDrag = 0.0018 * speed.current * speed.current;
         const totalDecel = (coastFriction + aeroDrag) * dt;
@@ -499,23 +569,26 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
       if (Math.abs(speed.current) < 0.2) speed.current = 0;
     }
 
-    // --- 3. Heading & Drifting (Yaw & Lateral Slip) ---
-    const turnSpeedFactor = THREE.MathUtils.clamp(Math.abs(speed.current) / 5.5, 0, 1);
-    const yawRate = steerAngle.current * (speed.current >= 0 ? 1 : -1) * 3.0 * turnSpeedFactor;
+    // --- 3. Responsive 360-Degree Supercar Steering & Turning Kinematics ---
+    // Smooth speed-sensitive steering yaw rate (optimal, smooth, realistic 360° turning)
+    const speedMag = Math.abs(speed.current);
+    const turnRatio = Math.min(1.0, speedMag / 3.5);
+    // Tighten steering sensitivity at high speeds so high-speed turns stay smooth and non-twitchy
+    const highSpeedDamp = THREE.MathUtils.clamp(1.2 - (speedMag / 80) * 0.5, 0.45, 1.2);
+    const yawRate = steerAngle.current * (speed.current >= 0 ? 1 : -1) * 1.5 * turnRatio * highSpeedDamp;
 
-    // Drifting slip calculation
-    const baseGrip = inputHandbrake ? 0.32 : 0.88;
-    const lateralForce = Math.sin(steerAngle.current) * speed.current * 1.5;
-
-    if (Math.abs(speed.current) > 7 && (Math.abs(lateralForce) > 3.8 || inputHandbrake)) {
-      lateralSlip.current = THREE.MathUtils.lerp(lateralSlip.current, lateralForce * 1.4, dt * 6);
-      heading.current += (yawRate + lateralSlip.current * 0.07) * dt;
+    // Drifting & full 360° heading rotation
+    const baseGrip = inputHandbrake ? 0.35 : 0.92;
+    if (speedMag > 5.0 && (Math.abs(steerAngle.current) > 0.1 || inputHandbrake)) {
+      const slip = Math.sin(steerAngle.current) * speed.current * 0.9;
+      lateralSlip.current = THREE.MathUtils.lerp(lateralSlip.current, slip, dt * 5.0);
+      heading.current += (yawRate + lateralSlip.current * 0.03) * dt;
     } else {
-      lateralSlip.current = THREE.MathUtils.lerp(lateralSlip.current, 0, dt * baseGrip * 9);
+      lateralSlip.current = THREE.MathUtils.lerp(lateralSlip.current, 0, dt * baseGrip * 8.0);
       heading.current += yawRate * dt;
     }
 
-    // Velocity Vector in world space
+    // Velocity Vector in 360-degree world space
     const forwardX = Math.sin(heading.current);
     const forwardZ = Math.cos(heading.current);
     const rightX = Math.cos(heading.current);
@@ -530,17 +603,35 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
     // expose car Z for InfiniteRoad component
     (window as any).carPositionZ = pos.current.z;
 
+    // Distance Score: Forward increases score, Reverse decreases score
+    if (speed.current > 0.4) {
+      distanceDriven.current += speed.current * dt;
+    } else if (speed.current < -0.4) {
+      // Driving backwards lowers/penalizes score
+      distanceDriven.current = Math.max(0, distanceDriven.current - Math.abs(speed.current) * 0.6 * dt);
+    }
+
+    damageCooldown.current = Math.max(0, damageCooldown.current - dt);
+
     // Lateral boundary (keeps car on 6-lane boulevard between kerbs)
     if (pos.current.x < -15.5) {
       pos.current.x = -15.5;
       velocity.current.x = Math.abs(velocity.current.x) * 0.4;
       speed.current *= 0.85;
       audioEngine.playCrash(0.65);
+      if (damageCooldown.current <= 0) {
+        applyDamage(10);
+        damageCooldown.current = 0.5;
+      }
     } else if (pos.current.x > 15.5) {
       pos.current.x = 15.5;
       velocity.current.x = -Math.abs(velocity.current.x) * 0.4;
       speed.current *= 0.85;
       audioEngine.playCrash(0.65);
+      if (damageCooldown.current <= 0) {
+        applyDamage(10);
+        damageCooldown.current = 0.5;
+      }
     }
 
     // Central Jersey Barrier Concrete Median Collision (Between X = -1.2 and X = 1.2)
@@ -549,27 +640,35 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
       velocity.current.x = -Math.abs(velocity.current.x) * 0.45;
       speed.current *= 0.8;
       audioEngine.playCrash(0.8);
+      if (damageCooldown.current <= 0) {
+        applyDamage(12);
+        damageCooldown.current = 0.5;
+      }
     } else if (pos.current.x < 1.25 && pos.current.x >= 0) {
       pos.current.x = 1.28;
       velocity.current.x = Math.abs(velocity.current.x) * 0.45;
       speed.current *= 0.8;
       audioEngine.playCrash(0.8);
+      if (damageCooldown.current <= 0) {
+        applyDamage(12);
+        damageCooldown.current = 0.5;
+      }
     }
 
-    // Speed Breaker Bump (Synchronized with 3D speedbreaker at Z = 150 of every 300m chunk)
+    // Speed Breaker Bump (Micro thud effect - car stays flat on asphalt without flying/bouncing)
     bumpCooldown.current = Math.max(0, bumpCooldown.current - dt);
     const modZ = ((pos.current.z % 300) + 300) % 300;
     const isOverSpeedBreaker =
       Math.abs(pos.current.x) < 15.2 && Math.abs(pos.current.x) > 1.3 && Math.abs(modZ - 150) < 1.8;
 
     if (isOverSpeedBreaker && bumpCooldown.current <= 0 && Math.abs(speed.current) > 2.5) {
-      verticalVel.current = Math.min(2.8, Math.abs(speed.current) * 0.14);
+      verticalVel.current = Math.min(0.25, Math.abs(speed.current) * 0.015);
       audioEngine.playBump();
       bumpCooldown.current = 0.35;
     }
 
-    // Suspension spring & damping
-    verticalVel.current -= 28.0 * dt;
+    // High damping stiff sports suspension - car stays flat on asphalt
+    verticalVel.current -= 45.0 * dt;
     altitude.current += verticalVel.current * dt;
     if (altitude.current < 0) {
       altitude.current = 0;
@@ -577,15 +676,14 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
     }
     pos.current.y = altitude.current;
 
-    // Chassis Pitch & Roll
+    // Subtle sports car chassis pitch & roll (stiff, flat, no boat-like pitching)
     const targetPitch =
-      (inputForward ? -0.04 : 0) +
-      (inputBackward && speed.current > 1 ? 0.07 : 0) +
-      (verticalVel.current > 0 ? -0.05 : 0);
-    suspensionPitch.current = THREE.MathUtils.lerp(suspensionPitch.current, targetPitch, dt * 9);
+      (inputForward ? -0.01 : 0) +
+      (inputBackward && speed.current > 1 ? 0.015 : 0);
+    suspensionPitch.current = THREE.MathUtils.lerp(suspensionPitch.current, targetPitch, dt * 6);
 
-    const targetRoll = -yawRate * 0.08 - lateralSlip.current * 0.03;
-    suspensionRoll.current = THREE.MathUtils.lerp(suspensionRoll.current, targetRoll, dt * 9);
+    const targetRoll = -yawRate * 0.025 - lateralSlip.current * 0.01;
+    suspensionRoll.current = THREE.MathUtils.lerp(suspensionRoll.current, targetRoll, dt * 6);
 
     // Wheels & Steering Transforms
     const rollAngle = (speed.current * dt) / 0.35;
@@ -723,6 +821,11 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
         rightTirePos: rightTireWorld,
         boostBar: Number(boostBar.toFixed(2)),
         lateralG: Number(lateralG.toFixed(2)),
+        distanceMeters: Math.round(distanceDriven.current),
+        carHp: carHp.current,
+        isSlowedDown: slowdownTimer.current > 0,
+        slowdownRemainingSec: Number(slowdownTimer.current.toFixed(1)),
+        isGameOver: carHp.current <= 0,
       });
     }
   });
@@ -730,15 +833,30 @@ export const FerrariDriveController: React.FC<FerrariDriveControllerProps> = ({
   return (
     <group ref={localCarRef} position={initialPosition}>
       <group ref={chassisRef}>
-        {/* Rotate Ferrari model by Math.PI around Y so front points +Z */}
-        <primitive object={clonedScene} rotation={[0, Math.PI, 0]} />
-
-        {/* 3D REALISTIC HUMAN RACING DRIVER INSIDE COCKPIT */}
-        <HumanDriver
-          steerAngle={steerAngle.current}
-          speedKmh={Math.abs(speed.current) * 3.6}
-          isCockpitView={cameraMode === 'cockpit'}
+        {/* Real Ground Contact Shadow & AO */}
+        <ContactShadows
+          position={[0, 0.02, 0]}
+          opacity={0.85}
+          scale={7}
+          blur={2.0}
+          far={3.5}
+          color="#050508"
         />
+
+        {/* All car visuals inside one group aligned to sceneOffset so everything is co-located */}
+        <group position={[sceneOffset.x, sceneOffset.y, sceneOffset.z]}>
+          <primitive object={clonedScene} />
+
+          {/* Driver sits inside the cockpit:
+              X=0.35 = left (driver) side
+              Y = 38% of car height ≈ cockpit floor level
+              Z = 0.25 = forward of center (dashboard/wheel area) */}
+          <HumanDriver
+            steerAngle={steerAngle.current}
+            speedKmh={Math.abs(speed.current) * 3.6}
+            isCockpitView={cameraMode === 'cockpit'}
+          />
+        </group>
 
         {/* Headlight Beams */}
         {headlightsOn.current && (

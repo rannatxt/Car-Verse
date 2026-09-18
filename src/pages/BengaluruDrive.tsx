@@ -7,17 +7,19 @@ import { AITraffic } from '../components/game/AITraffic';
 import { TireVFX } from '../components/game/TireVFX';
 import { DrivingCamera, CameraMode, CAMERA_MODES } from '../components/game/DrivingCamera';
 import { GameHUD } from '../components/game/GameHUD';
-import { MobileControls } from '../components/game/MobileControls';
 import { PauseMenu } from '../components/game/PauseMenu';
+import { GameOverMenu } from '../components/game/GameOverMenu';
 import { audioEngine } from '../components/game/AudioEngine';
 import { Play, ChevronRight, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { WebGLBoundary } from '../components/ui/WebGLBoundary';
 
-type GamePhase = 'start' | 'playing' | 'paused';
+type GamePhase = 'start' | 'playing' | 'paused' | 'gameover';
 
 export const BengaluruDrive: React.FC = () => {
+  const navigate = useNavigate();
   const [phase, setPhase] = useState<GamePhase>('start');
-  const [timeOfDay, setTimeOfDay] = useState<string>('sunset');
+  const [timeOfDay, setTimeOfDay] = useState<string>('day');
   const [cameraMode, setCameraMode] = useState<CameraMode>('chase');
 
   const [telemetry, setTelemetry] = useState<CarTelemetry>({
@@ -34,6 +36,11 @@ export const BengaluruDrive: React.FC = () => {
     carVelocity: new THREE.Vector3(),
     leftTirePos: new THREE.Vector3(),
     rightTirePos: new THREE.Vector3(),
+    distanceMeters: 0,
+    carHp: 100,
+    isSlowedDown: false,
+    slowdownRemainingSec: 0,
+    isGameOver: false,
   });
 
   const [virtualInput, setVirtualInput] = useState<Partial<InputState>>({});
@@ -87,6 +94,29 @@ export const BengaluruDrive: React.FC = () => {
     };
   }, []);
 
+  // Auto transition to gameover phase when 0% HP reached
+  useEffect(() => {
+    if (telemetry.isGameOver && phase === 'playing') {
+      setPhase('gameover');
+    }
+  }, [telemetry.isGameOver, phase]);
+
+  const handleRestart = useCallback(() => {
+    // Reset local telemetry state immediately so gameover modal closes on 1st click
+    setTelemetry((prev) => ({
+      ...prev,
+      carHp: 100,
+      isGameOver: false,
+      distanceMeters: 0,
+      speedKmh: 0,
+      driftScore: 0,
+      isSlowedDown: false,
+      slowdownRemainingSec: 0,
+    }));
+    handleResetCar();
+    setPhase('playing');
+  }, [handleResetCar]);
+
   const currentCameraLabel = CAMERA_MODES.find((m) => m.id === cameraMode)?.label || 'Chase';
 
   // ======= START SCREEN =======
@@ -94,26 +124,28 @@ export const BengaluruDrive: React.FC = () => {
     return (
       <div className="relative w-screen h-screen overflow-hidden bg-[#050507]">
         {/* 3D Background Preview */}
-        <div className="absolute inset-0 z-0">
-          <Canvas
-            shadows
-            style={{ background: '#050507' }}
-            camera={{ position: [15, 8, 20], fov: 55, near: 0.1, far: 400 }}
-            gl={{
-              antialias: true,
-              powerPreference: 'high-performance',
-              toneMapping: THREE.ACESFilmicToneMapping,
-              toneMappingExposure: 1.0,
-            }}
-          >
-            <Suspense fallback={null}>
-              <OpenWorld timeOfDay={timeOfDay as any} playerZ={-20} />
-              <FerrariDriveController
-                initialPosition={[-7.5, 0, -20]}
-                cameraMode="chase"
-              />
-            </Suspense>
-          </Canvas>
+        <div className="absolute inset-0 z-0 touch-none">
+          <WebGLBoundary fallbackTitle="Open World Preview Error">
+            <Canvas
+              shadows
+              style={{ background: '#050507', touchAction: 'none' }}
+              camera={{ position: [15, 8, 20], fov: 55, near: 0.1, far: 400 }}
+              gl={{
+                antialias: true,
+                powerPreference: 'high-performance',
+                toneMapping: THREE.ACESFilmicToneMapping,
+                toneMappingExposure: 1.0,
+              }}
+            >
+              <Suspense fallback={null}>
+                <OpenWorld timeOfDay={timeOfDay as any} playerZ={-20} />
+                <FerrariDriveController
+                  initialPosition={[-7.5, 0, -20]}
+                  cameraMode="chase"
+                />
+              </Suspense>
+            </Canvas>
+          </WebGLBoundary>
         </div>
 
         {/* Cinematic Overlay */}
@@ -131,16 +163,16 @@ export const BengaluruDrive: React.FC = () => {
               <span>SHOWROOM</span>
             </Link>
 
-            {/* Time of Day Selector */}
+            {/* Time of Day Selector (Only Day & Night) */}
             <div className="flex items-center space-x-1.5">
-              {['day', 'sunset', 'night', 'cyber'].map((t) => (
+              {['day', 'night'].map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTimeOfDay(t)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider transition-all ${
+                  className={`px-3.5 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider transition-all ${
                     timeOfDay === t
-                      ? 'bg-white/20 text-white border border-white/30'
+                      ? 'bg-white/20 text-white border border-white/30 font-bold shadow-md'
                       : 'bg-white/5 text-neutral-400 border border-white/10 hover:text-white hover:bg-white/10'
                   }`}
                 >
@@ -204,80 +236,83 @@ export const BengaluruDrive: React.FC = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black">
       {/* 3D Driving Canvas */}
-      <div className="absolute inset-0 z-0">
-        <Canvas
-          shadows
-          style={{ background: '#050507' }}
-          camera={{ position: [0, 5, -15], fov: 60, near: 0.1, far: 500 }}
-          gl={{
-            antialias: true,
-            powerPreference: 'high-performance',
-            toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: 1.15,
-          }}
-        >
-          <Suspense fallback={null}>
-            {/* World Environment (Infinite Seamless Tiling) */}
-            <OpenWorld timeOfDay={timeOfDay as any} playerZ={telemetry.position.z} />
+      <div className="absolute inset-0 z-0 touch-none">
+        <WebGLBoundary fallbackTitle="3D Driving Canvas Error">
+          <Canvas
+            shadows
+            style={{ background: '#050507', touchAction: 'none' }}
+            camera={{ position: [0, 5, -15], fov: 60, near: 0.1, far: 500 }}
+            gl={{
+              antialias: true,
+              powerPreference: 'high-performance',
+              toneMapping: THREE.ACESFilmicToneMapping,
+              toneMappingExposure: 1.15,
+            }}
+          >
+            <Suspense fallback={null}>
+              {/* World Environment (Infinite Seamless Tiling) */}
+              <OpenWorld timeOfDay={timeOfDay as any} playerZ={telemetry.position.z} />
 
-            {/* Ferrari Physics Controller */}
-            <FerrariDriveController
-              virtualInput={virtualInput}
-              onTelemetryUpdate={setTelemetry}
-              onCameraToggle={handleCameraToggle}
-              carRef={carGroupRef}
-              cameraMode={cameraMode}
-            />
+              {/* Ferrari Physics Controller */}
+              <FerrariDriveController
+                virtualInput={virtualInput}
+                onTelemetryUpdate={setTelemetry}
+                onCameraToggle={handleCameraToggle}
+                carRef={carGroupRef}
+                cameraMode={cameraMode}
+              />
 
-            {/* AI Traffic */}
-            <AITraffic playerPos={telemetry.position} />
+              {/* AI Traffic */}
+              <AITraffic playerPos={telemetry.position} />
 
-            {/* Tire Skid Marks & Smoke */}
-            <TireVFX
-              isSkidding={telemetry.isDrifting || telemetry.slipRatio > 0.2}
-              leftTirePos={telemetry.leftTirePos}
-              rightTirePos={telemetry.rightTirePos}
-              carVelocity={telemetry.carVelocity}
-            />
+              {/* Tire Skid Marks & Smoke */}
+              <TireVFX
+                isSkidding={telemetry.isDrifting || telemetry.slipRatio > 0.2}
+                leftTirePos={telemetry.leftTirePos}
+                rightTirePos={telemetry.rightTirePos}
+                carVelocity={telemetry.carVelocity}
+              />
 
-            {/* Dynamic Camera System */}
-            <DrivingCamera
-              carPosition={telemetry.position}
-              carHeading={telemetry.heading}
-              carSpeedKmh={telemetry.speedKmh}
-              mode={cameraMode}
-            />
-          </Suspense>
-        </Canvas>
+              {/* Dynamic Camera System */}
+              <DrivingCamera
+                carRef={carGroupRef}
+                carPosition={telemetry.position}
+                carHeading={telemetry.heading}
+                carSpeedKmh={telemetry.speedKmh}
+                mode={cameraMode}
+              />
+            </Suspense>
+          </Canvas>
+        </WebGLBoundary>
       </div>
 
       {/* HUD Overlay */}
       {phase === 'playing' && (
-        <>
-          <GameHUD
-            telemetry={telemetry}
-            cameraName={currentCameraLabel}
-            onCameraChange={handleCameraToggle}
-            onPauseToggle={() => setPhase('paused')}
-            timeOfDay={timeOfDay}
-          />
-
-          <MobileControls
-            onInputChange={handleMobileInput}
-            onCameraClick={handleCameraToggle}
-            onResetClick={handleResetCar}
-            currentCameraName={currentCameraLabel}
-          />
-        </>
+        <GameHUD
+          telemetry={telemetry}
+          cameraName={currentCameraLabel}
+          onCameraChange={handleCameraToggle}
+          onPauseToggle={() => setPhase('paused')}
+          timeOfDay={timeOfDay}
+        />
       )}
 
       {/* Pause Menu */}
       <PauseMenu
         isOpen={phase === 'paused'}
         onResume={() => setPhase('playing')}
-        onResetCar={handleResetCar}
+        onResetCar={handleRestart}
+        onMainMenu={() => navigate('/')}
         timeOfDay={timeOfDay}
         onTimeChange={setTimeOfDay}
+      />
+
+      {/* Game Over Screen */}
+      <GameOverMenu
+        isOpen={phase === 'gameover'}
+        telemetry={telemetry}
+        onRestart={handleRestart}
+        onMainMenu={() => navigate('/')}
       />
     </div>
   );

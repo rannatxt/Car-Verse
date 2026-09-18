@@ -74,11 +74,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const gDotX = Math.min(22, Math.max(-22, latG * 18));
   const gDotY = Math.min(22, Math.max(-22, (telemetry.speedKmh > 10 ? -0.4 : 0) * 18));
 
+  const distance = telemetry.distanceMeters || 0;
+  const hp = telemetry.carHp ?? 100;
+
   return (
     <div className="absolute inset-0 pointer-events-none select-none z-20 flex flex-col justify-between p-3 sm:p-6">
       {/* ================= TOP BAR ================= */}
       <div className="flex items-start justify-between w-full">
-        {/* Left: Neighborhood Badge & Quick Mute */}
+        {/* Left: Neighborhood Badge, Quick Mute & Corner Warning Notification */}
         <div className="flex flex-col space-y-2 pointer-events-auto">
           <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-black/65 backdrop-blur-md border border-white/15 text-xs font-mono text-neutral-200 shadow-xl">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -102,40 +105,76 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowControlsGuide(!showControlsGuide)}
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-black/55 backdrop-blur-md border border-white/10 text-neutral-300 hover:text-white hover:bg-black/70 active:scale-95 transition-all text-xs shadow-lg"
-              title="Toggle Controls Guide"
-            >
-              <Keyboard className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-[10px] font-mono uppercase">KEYS</span>
-            </button>
+            {/* Corner Warning Notification when Engine Stunned */}
+            {telemetry.isSlowedDown && (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/90 backdrop-blur-md border border-rose-500/60 text-rose-200 text-xs font-mono font-bold shadow-[0_0_20px_rgba(244,63,94,0.5)] animate-pulse">
+                <Zap className="w-3.5 h-3.5 text-rose-400 animate-bounce" />
+                <span>STUNNED ({telemetry.slowdownRemainingSec || 3.0}s)</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Center: Camera Hint */}
-        {showCameraHint && (
-          <div className="pointer-events-auto flex items-center space-x-2 px-4 py-2 rounded-2xl bg-cyan-950/85 backdrop-blur-md border border-cyan-500/40 text-cyan-200 text-xs font-mono shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500">
-            <Eye className="w-4 h-4 text-cyan-400 animate-bounce" />
-            <span>
-              Press <kbd className="px-1.5 py-0.5 rounded bg-cyan-500/30 text-white font-bold">C</kbd> to Change Camera ({cameraName})
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowCameraHint(false)}
-              className="text-cyan-400/60 hover:text-white ml-2"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+        {/* Center: Score (Distance) & Smooth Continuous HP Health Bar */}
+        <div className="flex flex-col items-center pointer-events-auto">
+          <div className="flex items-center space-x-3">
+            {/* Score Reader */}
+            <div className="flex items-center space-x-2 px-4 py-2 rounded-2xl bg-black/75 backdrop-blur-xl border border-amber-500/40 text-xs font-mono shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+              <span className="text-amber-400 font-bold tracking-widest text-[10px] uppercase">SCORE</span>
+              <span className="text-lg font-black font-mono text-white tracking-wider">
+                {distance.toLocaleString()}
+                <span className="text-[10px] text-amber-300/80 font-bold ml-1">M</span>
+              </span>
+            </div>
 
-        {/* Right: Pause Menu */}
+            {/* Continuous Smooth Curved HP Bar */}
+            <div className="flex items-center space-x-3 px-4 py-2 rounded-2xl bg-black/75 backdrop-blur-xl border border-white/20 text-xs font-mono shadow-2xl">
+              <span className="text-rose-400 font-bold text-[10px] uppercase tracking-widest">HP</span>
+              
+              <div className="w-28 sm:w-36 h-3 rounded-full bg-neutral-900/90 border border-white/15 p-0.5 shadow-inner overflow-hidden relative">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ease-out ${
+                    hp > 75
+                      ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]'
+                      : hp > 50
+                      ? 'bg-gradient-to-r from-cyan-500 via-blue-400 to-indigo-400 shadow-[0_0_12px_rgba(6,182,212,0.8)]'
+                      : hp > 25
+                      ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-400 shadow-[0_0_12px_rgba(245,158,11,0.8)]'
+                      : 'bg-gradient-to-r from-rose-600 via-red-500 to-pink-500 shadow-[0_0_16px_rgba(244,63,94,1.0)] animate-pulse'
+                  }`}
+                  style={{ width: `${Math.max(0, Math.min(100, hp))}%` }}
+                />
+              </div>
+
+              <span
+                className={`font-black font-mono text-xs ${
+                  hp <= 25 ? 'text-rose-400 animate-pulse' : hp <= 50 ? 'text-amber-400' : 'text-white'
+                }`}
+              >
+                {hp}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Camera Switcher & Pause Menu */}
         <div className="pointer-events-auto flex items-center space-x-2">
-          <div className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-[11px] font-mono uppercase text-amber-300">
+          {/* Camera View Switcher Button */}
+          <button
+            type="button"
+            onClick={onCameraChange}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-black/60 backdrop-blur-md border border-cyan-500/40 text-xs font-mono text-cyan-300 hover:text-white hover:bg-black/80 hover:border-cyan-400 active:scale-95 transition-all shadow-xl"
+            title="Switch Camera View (C)"
+          >
+            <Eye className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-bold uppercase">{cameraName}</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-[9px] text-neutral-300">C</kbd>
+          </button>
+
+          <div className="px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-[11px] font-mono uppercase text-amber-300">
             {timeOfDay}
           </div>
+
           <button
             type="button"
             onClick={onPauseToggle}
@@ -175,60 +214,6 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 DRIFT!
               </span>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ================= CONTROLS FLOATING MODAL ================= */}
-      {showControlsGuide && (
-        <div className="pointer-events-auto self-start max-w-sm rounded-2xl bg-black/85 backdrop-blur-2xl border border-white/20 p-4 text-white shadow-2xl animate-in fade-in slide-in-from-left-4 duration-300 z-50">
-          <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
-            <div className="flex items-center space-x-2">
-              <Keyboard className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold tracking-wider uppercase">DRIVING CONTROLS</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowControlsGuide(false)}
-              className="text-neutral-400 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Drive Forward</span>
-              <span className="font-bold text-emerald-400">W / ↑</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Brake / Reverse</span>
-              <span className="font-bold text-rose-400">S / ↓</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Steer Left</span>
-              <span className="font-bold text-cyan-400">A / ←</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Steer Right</span>
-              <span className="font-bold text-cyan-400">D / →</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Handbrake</span>
-              <span className="font-bold text-amber-400">SPACE</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Reset Position</span>
-              <span className="font-bold text-cyan-400">R</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Cycle Camera</span>
-              <span className="font-bold text-purple-400">C</span>
-            </div>
-            <div className="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-lg">
-              <span className="text-neutral-400">Italian Horn</span>
-              <span className="font-bold text-yellow-300">H</span>
-            </div>
           </div>
         </div>
       )}
